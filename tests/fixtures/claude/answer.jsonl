@@ -1,0 +1,4 @@
+{"type": "system", "subtype": "init", "model": "claude-opus-5[1m]", "permissionMode": "bypassPermissions", "cwd": "/workspace", "session_id": "00000000-0000-4000-8000-000000000000"}
+{"type": "rate_limit_event", "rate_limit_info": {"status": "allowed"}, "session_id": "00000000-0000-4000-8000-000000000000"}
+{"type": "assistant", "message": {"role": "assistant", "model": "claude-opus-5", "content": [{"type": "text", "text": "ok"}]}, "session_id": "00000000-0000-4000-8000-000000000000"}
+{"type": "result", "subtype": "success", "is_error": false, "num_turns": 1, "result": "ok", "stop_reason": "end_turn", "terminal_reason": "completed", "permission_denials": [], "session_id": "00000000-0000-4000-8000-000000000000"}
