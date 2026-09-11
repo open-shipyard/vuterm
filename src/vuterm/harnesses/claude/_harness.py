@@ -9,9 +9,7 @@ from typing import Any
 
 from vuterm._results import AgentResult
 from vuterm.harnesses._base import AgentSession, Harness
-
-# Tool inputs and results can hold whole files; log only their start.
-MAX_TOOL_LOG_CHARS = 300
+from vuterm.harnesses._text import truncate
 
 
 class ClaudeHarness(Harness):
@@ -89,11 +87,11 @@ def _describe_block(block: Any) -> str | None:
         case "text":
             return str(block["text"])
         case "tool_use":
-            tool_input = _truncate(json.dumps(block["input"]))
+            tool_input = truncate(json.dumps(block["input"]))
             return f"Tool call {block['name']}: {tool_input}"
         case "tool_result":
             label = "Tool error" if block.get("is_error") else "Tool result"
-            return f"{label}: {_truncate(_text(block.get('content')))}"
+            return f"{label}: {truncate(_text(block.get('content')))}"
     return None
 
 
@@ -103,12 +101,6 @@ def _text(content: Any) -> str:
     if isinstance(content, list):
         return "\n".join(str(part.get("text", "")) for part in content)
     return str(content)
-
-
-def _truncate(text: str) -> str:
-    if len(text) <= MAX_TOOL_LOG_CHARS:
-        return text
-    return text[:MAX_TOOL_LOG_CHARS] + "…"
 
 
 def _join(parts: Iterable[str | None]) -> str | None:
