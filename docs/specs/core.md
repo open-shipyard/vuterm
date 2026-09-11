@@ -11,7 +11,7 @@ import vuterm as vt
 
 
 # works with Github repos Org/repo User/repo
-vt_cli = vt.Cient(
+vt_cli = vt.Client(
     working_dir="/some/path",
     repositories=["repo1", "repo2"],
 )
@@ -46,7 +46,7 @@ ws_path = vt_cli.prepare_new_workspace()
 import vuterm as vt
 
 
-vt_cli = vt.Cient(
+vt_cli = vt.Client(
     working_dir="/some/path",
     repositories=["repo1", "repo2"],
     max_workspace_count=100
@@ -89,4 +89,18 @@ vt_cli should also wrap git and gh clients, and exposing Python functions for:
 - pushing to remote
 - creating a PR
 - deleting a local branch
+
+
+## Results
+
+`launch_agent` and `launch_agent_in_workspace` return a result that only
+reports whether the agent completed successfully or errored. Anything else
+(output, exit code, cost, session id) is out of scope for now.
+
+
+## Harness port
+
+Harnesses such as Claude Code, Codex and OpenCode integrate through a single
+port. Onboarding a new vendor CLI means implementing that port and nothing
+else.
 
