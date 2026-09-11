@@ -98,9 +98,26 @@ reports whether the agent completed successfully or errored. Anything else
 (output, exit code, cost, session id) is out of scope for now.
 
 
+## Agent runs
+
+Agents run headless and non-interactive, e.g. `claude -p`. After an agent is
+launched and until it exits, vt_cli does not interact with it: no input on
+stdin, no answers to prompts and no pseudo-terminal. vt_cli only reads its
+output while it runs and its exit status when it finishes.
+
+
 ## Harness port
 
 Harnesses such as Claude Code, Codex and OpenCode integrate through a single
 port. Onboarding a new vendor CLI means implementing that port and nothing
 else.
+
+The port does no I/O. For each run, the harness creates a session that:
+
+- provides the command line that runs the agent headless on the task
+- turns each output line into a log message, or skips it
+- turns the exit status and the lines it has seen into the result
+
+vt_cli runs the command and feeds each output line to the session as soon as
+the agent writes it, so logs are available while the agent runs.
 
