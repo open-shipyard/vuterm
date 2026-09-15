@@ -14,6 +14,7 @@ from vuterm._runner import CommandRunner, SubprocessRunner
 from vuterm._workspaces import WorkspacePool
 from vuterm.harnesses import Harness
 from vuterm.harnesses.claude import ClaudeHarness
+from vuterm.harnesses.opencode import OpenCodeHarness
 
 DEFAULT_MAX_WORKSPACE_COUNT = 10
 
@@ -33,7 +34,8 @@ class Client:
         runner: Runs every ``git``, ``gh`` and agent command.
         git: ``git`` wrapper; defaults to one using `runner`.
         github: ``gh`` wrapper; defaults to one using `runner`.
-        harnesses: Agent CLIs available by name; defaults to Claude Code.
+        harnesses: Agent CLIs available by name; defaults to Claude Code and
+            OpenCode.
     """
 
     def __init__(
@@ -51,7 +53,8 @@ class Client:
         self._runner = runner or SubprocessRunner()
         self.git = git or Git(self._runner)
         self.github = github or GitHub(self._runner)
-        self._harnesses = {h.name: h for h in (harnesses or [ClaudeHarness()])}
+        default_harnesses = [ClaudeHarness(), OpenCodeHarness()]
+        self._harnesses = {h.name: h for h in (harnesses or default_harnesses)}
         self._repositories = list(repositories)
         self._repos_dir = root / "repos"
         self._workspaces = WorkspacePool(
