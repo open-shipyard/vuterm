@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from vuterm import CommandRunner, CompletedCommand
+from vuterm import CommandRunner, CommandTimeoutError, CompletedCommand
 from vuterm._runner import OnLine
 
 Call = tuple[tuple[str, ...], Path]
@@ -44,7 +44,7 @@ def remote(command: tuple[str, ...], cwd: Path) -> str:
 class FakeRunner(CommandRunner):
     """Records every command; answers `run` from outputs keyed by the command's
     first two words and failures keyed by any leading words, and `stream` with
-    fixed lines.
+    fixed lines, then its timeout if told to run past it.
 
     Like git and gh, it makes the folder of a worktree it is asked to add or
     a repository it is asked to clone, and ``rev-parse --show-toplevel``
@@ -65,6 +65,8 @@ class FakeRunner(CommandRunner):
         self.stdout_lines: list[str] = []
         self.stderr_lines: list[str] = []
         self.returncode = 0
+        self.runs_past_timeout = False
+        self.timeouts: list[float | None] = []
         self.while_streaming: Callable[[], None] | None = None
 
     def run(self, args: Sequence[str], *, cwd: Path) -> CompletedCommand:
@@ -96,14 +98,18 @@ class FakeRunner(CommandRunner):
         cwd: Path,
         on_stdout: OnLine,
         on_stderr: OnLine,
+        timeout: float | None = None,
     ) -> int:
         self.streamed.append((tuple(args), cwd))
+        self.timeouts.append(timeout)
         if self.while_streaming is not None:
             self.while_streaming()
         for line in self.stdout_lines:
             on_stdout(line)
         for line in self.stderr_lines:
             on_stderr(line)
+        if self.runs_past_timeout and timeout is not None:
+            raise CommandTimeoutError("timed out", timeout=timeout, returncode=-9)
         return self.returncode
 
     def commands(self, *first_words: str) -> list[Call]:

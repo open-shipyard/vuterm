@@ -28,8 +28,12 @@ result = client.launch_agent(harness="claude", task="update the README")
 print(result.success, result.response)  # the response is the agent's final message
 
 # In a workspace with a fresh worktree of each repository, one agent at a time.
+# Stopped, with result.timed_out set, if still running after 30 minutes; the
+# default is 3 hours, and timeout=None lets the agent run for as long as it takes.
 client.init()
-result = client.launch_agent_in_workspace(harness="claude", task="update the README")
+result = client.launch_agent_in_workspace(
+    harness="claude", task="update the README", timeout=30 * 60
+)
 ```
 
 See [docs/specs](docs/specs) for how workspaces are created, reused and

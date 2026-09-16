@@ -25,6 +25,11 @@ and this project adheres to
   and a failed creation leaves nothing behind in the clones.
 - `AgentResult.response`, the agent's final message, read by each harness:
   Claude Code's `result` event, or the text of OpenCode's last step.
+- A `timeout` for `launch_agent` and `launch_agent_in_workspace`, three hours
+  unless given, `None` for none: an agent
+  still running then is killed with its process group and reported with
+  `AgentResult.timed_out`. `CommandRunner.stream` takes the timeout and raises
+  `CommandTimeoutError` past it.
 - The `git` and `gh` wrappers, `Git` and `GitHub`, raising `CommandError`
   with the status and stderr of a failed command.
 

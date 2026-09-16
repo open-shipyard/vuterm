@@ -67,6 +67,61 @@ def test_reports_an_agent_error_as_a_result(tmp_path: Path, runner: FakeRunner) 
     assert result.response.startswith("There's an issue with the selected model")
 
 
+def test_runs_for_three_hours_unless_given_another_timeout_or_none(
+    tmp_path: Path, runner: FakeRunner
+) -> None:
+    vt = client(tmp_path, runner)
+
+    vt.launch_agent("claude", TASK)
+    vt.launch_agent_in_workspace("claude", TASK)
+    vt.launch_agent("claude", TASK, timeout=90)
+    vt.launch_agent_in_workspace("claude", TASK, timeout=1.5)
+    vt.launch_agent("claude", TASK, timeout=None)
+
+    assert runner.timeouts == [10800, 10800, 90, 1.5, None]
+
+
+def test_reports_an_agent_past_its_timeout_as_a_result(
+    tmp_path: Path, runner: FakeRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    replay(runner, "claude/answer.jsonl")  # a response, then a hang
+    runner.runs_past_timeout = True
+
+    with caplog.at_level(logging.INFO, logger="vuterm.agent"):
+        result = client(tmp_path, runner).launch_agent("claude", TASK, timeout=30)
+
+    assert result == AgentResult(success=False, response="ok", timed_out=True)
+    assert caplog.records[-1].levelname == "WARNING"
+    assert caplog.records[-1].message == "Agent stopped after its timeout of 30 s"
+
+
+def test_releases_the_workspace_of_an_agent_past_its_timeout(
+    tmp_path: Path, runner: FakeRunner
+) -> None:
+    vt = client(tmp_path, runner, max_workspace_count=1)
+    runner.runs_past_timeout = True
+
+    assert vt.launch_agent_in_workspace("claude", TASK, timeout=1).timed_out
+
+    runner.runs_past_timeout = False
+    assert vt.launch_agent_in_workspace("claude", TASK).success is False  # no lines
+    assert len(runner.streamed) == 2, "released, so taken again"
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_refuses_a_timeout_that_is_not_a_positive_number(
+    tmp_path: Path, runner: FakeRunner, timeout: float
+) -> None:
+    vt = client(tmp_path, runner)
+
+    with pytest.raises(ValueError, match="timeout must be a positive number"):
+        vt.launch_agent("claude", TASK, timeout=timeout)
+    with pytest.raises(ValueError, match="timeout must be a positive number"):
+        vt.launch_agent_in_workspace("claude", TASK, timeout=timeout)
+
+    assert runner.streamed == [] and runner.calls == [], "before any workspace"
+
+
 def test_selects_the_harness_by_name(tmp_path: Path, runner: FakeRunner) -> None:
     replay(runner, "opencode/answer.jsonl")
 

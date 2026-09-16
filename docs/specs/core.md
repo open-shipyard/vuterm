@@ -82,9 +82,9 @@ vt_cli should also wrap git and gh clients, and exposing Python functions for:
 ## Results
 
 `launch_agent` and `launch_agent_in_workspace` return a result that reports
-whether the agent completed successfully or errored, and its response: the
-agent's final message, or none if it gave none. Anything else (exit code,
-cost, session id) is out of scope for now.
+whether the agent completed successfully or errored, whether it was stopped
+at its timeout, and its response: the agent's final message, or none if it
+gave none. Anything else (exit code, cost, session id) is out of scope for now.
 
 Each harness decides what the response is, since every CLI reports it its own
 way: Claude Code's is the text of its `result` event; OpenCode sends no such
@@ -98,6 +98,15 @@ Agents run headless and non-interactive, e.g. `claude -p`. After an agent is
 launched and until it exits, vt_cli does not interact with it: no input on
 stdin, no answers to prompts and no pseudo-terminal. vt_cli only reads its
 output while it runs and its exit status when it finishes.
+
+Both launch methods take a `timeout`, in seconds, three hours by default,
+counted from when the agent starts: reserving and resetting a workspace does
+not count. An agent still running then is killed together with its process
+group, as at any other end of a run, and the result reports it as timed out,
+not successful, instead of raising. A process the agent started in a session
+or group of its own is not in that group and is not killed; on Windows only
+the agent itself is. With a timeout of `None` an agent runs for as long as it
+takes.
 
 
 ## Harness port

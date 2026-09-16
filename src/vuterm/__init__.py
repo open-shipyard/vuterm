@@ -6,7 +6,12 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from vuterm._client import Client
-from vuterm._errors import CommandError, NoWorkspaceAvailableError, VutermError
+from vuterm._errors import (
+    CommandError,
+    CommandTimeoutError,
+    NoWorkspaceAvailableError,
+    VutermError,
+)
 from vuterm._git import Git
 from vuterm._github import GitHub
 from vuterm._results import AgentResult
@@ -22,6 +27,7 @@ __all__ = [
     "Client",
     "CommandError",
     "CommandRunner",
+    "CommandTimeoutError",
     "CompletedCommand",
     "Git",
     "GitHub",
