@@ -25,7 +25,7 @@ client = vt.Client(working_dir="/some/path", repositories=["Org/repo"])
 
 # In the current folder.
 result = client.launch_agent(harness="claude", task="update the README")
-print(result.success)
+print(result.success, result.response)  # the response is the agent's final message
 
 # In a workspace with a fresh worktree of each repository, one agent at a time.
 client.init()

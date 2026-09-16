@@ -47,7 +47,7 @@ def test_launches_the_agent_in_the_current_folder(
     with caplog.at_level(logging.INFO, logger="vuterm.agent"):
         result = client(tmp_path, runner).launch_agent("claude", TASK)
 
-    assert result == AgentResult(success=True)
+    assert result == AgentResult(success=True, response="a.txt\nerr.txt\nout.jsonl")
     assert runner.streamed == [(tuple(ClaudeHarness().start(TASK).command), Path.cwd())]
     assert runner.calls == [], "no git or gh outside a workspace"
     messages = [(record.levelname, record.message) for record in caplog.records]
@@ -60,9 +60,11 @@ def test_reports_an_agent_error_as_a_result(tmp_path: Path, runner: FakeRunner) 
     replay(runner, "claude/api_error.jsonl")
     runner.returncode = 1
 
-    assert client(tmp_path, runner).launch_agent("claude", TASK) == AgentResult(
-        success=False
-    )
+    result = client(tmp_path, runner).launch_agent("claude", TASK)
+
+    assert not result.success
+    assert result.response is not None
+    assert result.response.startswith("There's an issue with the selected model")
 
 
 def test_selects_the_harness_by_name(tmp_path: Path, runner: FakeRunner) -> None:
@@ -92,7 +94,9 @@ def test_launches_in_a_reserved_workspace_and_releases_it(
     # Another thread's agent, while this one runs: the workspace is taken.
     runner.while_streaming = lambda: seen_during_run.append(vt._workspaces.reserve())
 
-    assert vt.launch_agent_in_workspace("claude", TASK) == AgentResult(success=True)
+    assert vt.launch_agent_in_workspace("claude", TASK) == AgentResult(
+        success=True, response="ok"
+    )
 
     assert runner.streamed[0][1] == workspace
     assert seen_during_run == [tmp_path / "workspaces" / "ws0002"]

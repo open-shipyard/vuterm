@@ -47,6 +47,7 @@ class ClaudeSession(AgentSession):
             task,
         ]
         self._is_error: bool | None = None
+        self._response: str | None = None
 
     @property
     def command(self) -> list[str]:
@@ -63,7 +64,10 @@ class ClaudeSession(AgentSession):
 
     def finish(self, returncode: int) -> AgentResult:
         # A failed run can still report subtype "success"; only is_error is reliable.
-        return AgentResult(success=returncode == 0 and self._is_error is False)
+        return AgentResult(
+            success=returncode == 0 and self._is_error is False,
+            response=self._response,
+        )
 
     def _describe(self, event: Any) -> str | None:
         match event["type"]:
@@ -74,6 +78,9 @@ class ClaudeSession(AgentSession):
             case "assistant" | "user":
                 return _join(_describe_block(b) for b in event["message"]["content"])
             case "result":
+                # The final message; runs cut short, as by max turns, have none.
+                response = event.get("result")
+                self._response = response if isinstance(response, str) else None
                 self._is_error = bool(event["is_error"])
                 turns = event["num_turns"]
                 if self._is_error:

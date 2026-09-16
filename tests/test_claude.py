@@ -49,24 +49,52 @@ def test_passes_the_permission_mode() -> None:
     assert command[command.index("--permission-mode") + 1] == "acceptEdits"
 
 
-@pytest.mark.parametrize(
-    ("scenario", "returncode", "success"),
-    [("answer", 0, True), ("tool_use", 0, True), ("api_error", 1, False)],
+MODEL_ERROR = (
+    "There's an issue with the selected model (does-not-exist-model). It may not "
+    "exist or you may not have access to it. Run --model to pick a different model."
 )
-def test_reads_the_outcome(scenario: str, returncode: int, success: bool) -> None:
+
+
+@pytest.mark.parametrize(
+    ("scenario", "returncode", "expected"),
+    [
+        ("answer", 0, AgentResult(success=True, response="ok")),
+        (
+            "tool_use",
+            0,
+            AgentResult(success=True, response="a.txt\nerr.txt\nout.jsonl"),
+        ),
+        ("api_error", 1, AgentResult(success=False, response=MODEL_ERROR)),
+    ],
+)
+def test_reads_the_outcome(
+    scenario: str, returncode: int, expected: AgentResult
+) -> None:
     session, _ = replay(scenario)
 
-    assert session.finish(returncode) == AgentResult(success=success)
+    assert session.finish(returncode) == expected
 
 
 def test_fails_when_claude_exits_non_zero_after_a_successful_result() -> None:
     session, _ = replay("answer")
 
-    assert session.finish(1) == AgentResult(success=False)
+    assert session.finish(1) == AgentResult(success=False, response="ok")
 
 
 def test_fails_without_a_result_event() -> None:
     assert ClaudeHarness().start(TASK).finish(0) == AgentResult(success=False)
+
+
+def test_has_no_response_when_the_result_event_has_none() -> None:
+    session = ClaudeHarness().start(TASK)
+    replaced = {"type": "result", "is_error": False, "num_turns": 1, "result": "ok"}
+    event = {"type": "result", "is_error": False, "num_turns": 2}
+
+    session.feed(json.dumps(replaced))
+    message = session.feed(json.dumps(event))
+
+    assert message == "Agent completed (turns: 2)", "read, not logged as written"
+    assert session.finish(0) == AgentResult(success=True)
 
 
 def test_logs_answers_tool_calls_and_the_outcome() -> None:
