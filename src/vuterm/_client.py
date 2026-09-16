@@ -3,12 +3,14 @@
 
 """Synchronous client."""
 
+import dataclasses
 import logging
+import math
 import os
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from vuterm._errors import VutermError
+from vuterm._errors import CommandTimeoutError, VutermError
 from vuterm._git import Git
 from vuterm._github import GitHub
 from vuterm._results import AgentResult
@@ -19,6 +21,9 @@ from vuterm.harnesses.claude import ClaudeHarness
 from vuterm.harnesses.opencode import OpenCodeHarness
 
 DEFAULT_MAX_WORKSPACE_COUNT = 10
+# Seconds an agent may run unless told otherwise: long enough for real work,
+# short enough that a hung agent does not hold its workspace for good.
+DEFAULT_TIMEOUT = 3 * 60 * 60
 
 # What agents write, as their sessions describe it: one INFO record per
 # message, and one WARNING record per line of stderr.
@@ -111,29 +116,48 @@ class Client:
         """
         return self._workspaces.create()
 
-    def launch_agent(self, harness: str, task: str) -> AgentResult:
+    def launch_agent(
+        self, harness: str, task: str, *, timeout: float | None = DEFAULT_TIMEOUT
+    ) -> AgentResult:
         """Run the `harness` agent on `task` in the current folder until it exits.
 
-        Raises:
-            ValueError: No harness is named `harness`.
-        """
-        return self._run(self._harness(harness), task, cwd=Path.cwd())
+        Args:
+            timeout: Seconds the agent may run. One still running then is
+                killed with its process group, and its result has
+                ``timed_out`` set. Three hours by default; None lets it run
+                for as long as it takes.
 
-    def launch_agent_in_workspace(self, harness: str, task: str) -> AgentResult:
+        Raises:
+            ValueError: No harness is named `harness`, or `timeout` is not a
+                positive number.
+        """
+        selected = self._harness(harness)
+        _check_timeout(timeout)
+        return self._run(selected, task, cwd=Path.cwd(), timeout=timeout)
+
+    def launch_agent_in_workspace(
+        self, harness: str, task: str, *, timeout: float | None = DEFAULT_TIMEOUT
+    ) -> AgentResult:
         """Run the `harness` agent on `task` in a reserved workspace until it exits.
 
         The workspace is reset to the condition of a new one before the agent
         starts, and its reservation is released when the agent exits.
 
+        Args:
+            timeout: Seconds the agent may run, as for `launch_agent`. The
+                time taken to reserve and reset the workspace does not count.
+
         Raises:
-            ValueError: No harness is named `harness`.
+            ValueError: No harness is named `harness`, or `timeout` is not a
+                positive number.
             NoWorkspaceAvailableError: Every workspace is reserved and
                 ``max_workspace_count`` workspaces already exist.
         """
         selected = self._harness(harness)
+        _check_timeout(timeout)
         workspace = self._workspaces.reserve()
         try:
-            return self._run(selected, task, cwd=workspace)
+            return self._run(selected, task, cwd=workspace, timeout=timeout)
         finally:
             self._workspaces.release(workspace)
 
@@ -146,7 +170,9 @@ class Client:
                 f"no harness is named {name!r}; available: {available}"
             ) from None
 
-    def _run(self, harness: Harness, task: str, *, cwd: Path) -> AgentResult:
+    def _run(
+        self, harness: Harness, task: str, *, cwd: Path, timeout: float | None
+    ) -> AgentResult:
         session = harness.start(task)
 
         def on_stdout(line: str) -> None:
@@ -158,7 +184,22 @@ class Client:
             agent_log.warning("%s", line)
 
         agent_log.info("Running %s in %s", harness.name, cwd)
-        returncode = self._runner.stream(
-            session.command, cwd=cwd, on_stdout=on_stdout, on_stderr=on_stderr
-        )
+        try:
+            returncode = self._runner.stream(
+                session.command,
+                cwd=cwd,
+                on_stdout=on_stdout,
+                on_stderr=on_stderr,
+                timeout=timeout,
+            )
+        except CommandTimeoutError as error:
+            agent_log.warning("Agent stopped after its timeout of %g s", error.timeout)
+            # Whatever the session read, such as a response, still stands.
+            result = session.finish(error.returncode)
+            return dataclasses.replace(result, success=False, timed_out=True)
         return session.finish(returncode)
+
+
+def _check_timeout(timeout: float | None) -> None:
+    if timeout is not None and not (timeout > 0 and math.isfinite(timeout)):
+        raise ValueError(f"timeout must be a positive number of seconds: {timeout!r}")

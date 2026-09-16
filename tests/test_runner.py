@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from vuterm import CompletedCommand, SubprocessRunner
+from vuterm import CommandTimeoutError, CompletedCommand, SubprocessRunner
 
 
 def python(code: str) -> list[str]:
@@ -167,6 +167,67 @@ def test_stream_returns_when_the_agent_exits_leaving_a_child_behind(
 
     assert (status, out) == (0, ["started"])
     assert time.monotonic() - started < 10, "the child was stopped with the run"
+
+
+def test_stream_within_its_timeout_returns_the_status(tmp_path: Path) -> None:
+    out: list[str] = []
+
+    status = SubprocessRunner().stream(
+        python("print('done'); raise SystemExit(3)"),
+        cwd=tmp_path,
+        on_stdout=out.append,
+        on_stderr=lambda _: None,
+        timeout=30,
+    )
+
+    assert (status, out) == (3, ["done"])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups")
+def test_stream_stops_a_command_past_its_timeout_with_its_group(
+    tmp_path: Path,
+) -> None:
+    pidfile = tmp_path / "pid"
+    command = python(
+        "import subprocess, sys, time\n"
+        "sleeper = [sys.executable, '-c', 'import time; time.sleep(30)']\n"
+        "child = subprocess.Popen(sleeper)\n"
+        f"open({str(pidfile)!r}, 'w').write(str(child.pid))\n"
+        "print('working', flush=True)\n"
+        "time.sleep(30)"
+    )
+    out: list[str] = []
+
+    started = time.monotonic()
+    with pytest.raises(CommandTimeoutError, match=r"after 0\.5 s") as raised:
+        SubprocessRunner().stream(
+            command,
+            cwd=tmp_path,
+            on_stdout=out.append,
+            on_stderr=lambda _: None,
+            timeout=0.5,
+        )
+
+    assert time.monotonic() - started < 10
+    assert out == ["working"], "what it wrote is delivered"
+    assert (raised.value.timeout, raised.value.returncode) == (0.5, -9)
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pidfile.read_text()), 0)  # the child went with it
+
+
+def test_a_callback_error_wins_over_the_timeout(tmp_path: Path) -> None:
+    def fail(line: str) -> None:
+        time.sleep(1)  # the timeout passes meanwhile
+        raise RuntimeError(line)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        SubprocessRunner().stream(
+            python("import time; print('boom', flush=True); time.sleep(30)"),
+            cwd=tmp_path,
+            on_stdout=fail,
+            on_stderr=lambda _: None,
+            timeout=0.3,
+        )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups")

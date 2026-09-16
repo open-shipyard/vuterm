@@ -17,6 +17,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from vuterm._errors import CommandTimeoutError
+
 OnLine = Callable[[str], None]
 
 # How long to wait for the output pipes to close after the agent and its
@@ -63,11 +65,16 @@ class CommandRunner(ABC):
         cwd: Path,
         on_stdout: OnLine,
         on_stderr: OnLine,
+        timeout: float | None = None,
     ) -> int:
         """Run `args` in `cwd`, passing each output line on as soon as it is written.
 
         For long-running agents. Returns the exit status; a non-zero one is not
         raised.
+
+        Raises:
+            CommandTimeoutError: The command was still running `timeout`
+                seconds after it started, and was stopped.
         """
 
 
@@ -90,6 +97,11 @@ class SubprocessRunner(CommandRunner):
     it. The group is also stopped when a callback raises or the caller is
     interrupted, and the exception is raised to the caller. No callback is
     called once `stream` has returned.
+
+    A streamed command still running at its timeout is killed with its
+    group, with no warning: agents run headless and have nothing to save.
+    What it wrote is delivered as for any other end, then
+    `CommandTimeoutError` is raised.
 
     Windows has no process groups or pipe polling of this kind: there, only
     the command itself is stopped, and a helper it leaves holding a pipe
@@ -116,10 +128,11 @@ class SubprocessRunner(CommandRunner):
         cwd: Path,
         on_stdout: OnLine,
         on_stderr: OnLine,
+        timeout: float | None = None,
     ) -> int:
         with _start(args, cwd=cwd) as process:
             readers = _readers(process, on_stdout, on_stderr)
-            return _finish(process, list(readers))
+            return _finish(process, list(readers), timeout=timeout)
 
 
 def _start(
@@ -167,8 +180,18 @@ def _readers(
     return readers[0], readers[1]
 
 
-def _finish(process: subprocess.Popen[bytes], readers: list["_Reader"]) -> int:
+def _finish(
+    process: subprocess.Popen[bytes],
+    readers: list["_Reader"],
+    *,
+    timeout: float | None = None,
+) -> int:
     """Wait for the process, stop its group, and collect the readers.
+
+    A process still running `timeout` seconds after it started is stopped
+    with its group, its output collected all the same, and
+    `CommandTimeoutError` raised after that, unless a reader has an error of
+    its own to raise.
 
     Once the process has ended, its pipes are read for `PIPE_CLOSE_TIMEOUT`
     more, and what was read is delivered however slow the sink: the process
@@ -178,7 +201,7 @@ def _finish(process: subprocess.Popen[bytes], readers: list["_Reader"]) -> int:
     at once; the output is lost, and the interruption is raised.
     """
     try:
-        _wait_and_kill_group(process)
+        timed_out = _wait_and_kill_group(process, timeout)
     except BaseException:
         _kill_group(process)
         for reader in readers:
@@ -206,18 +229,55 @@ def _finish(process: subprocess.Popen[bytes], readers: list["_Reader"]) -> int:
     for reader in readers:
         if reader.error is not None:
             raise reader.error
+    if timed_out:
+        assert timeout is not None
+        raise CommandTimeoutError(
+            f"{process.args!r} was still running after {timeout:g} s, and was stopped",
+            timeout=timeout,
+            returncode=process.returncode,
+        )
     return process.returncode
 
 
-def _wait_and_kill_group(process: subprocess.Popen[bytes]) -> None:
-    """Wait for the process to exit, kill what it left in its group, and
-    only then reap it: once reaped, its id could belong to someone else.
+def _wait_and_kill_group(
+    process: subprocess.Popen[bytes], timeout: float | None = None
+) -> bool:
+    """Wait for the process to exit, or for `timeout` seconds, kill what is
+    left in its group, and only then reap it: once reaped, its id could
+    belong to someone else. Returns whether the timeout came first.
     """
     if hasattr(os, "waitid"):
-        # Wait without reaping: the id stays the exited process's own.
-        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+        exited = _wait_without_reaping(process, timeout)
         _kill_group(process)
+    else:
+        try:
+            process.wait(timeout)
+            exited = True
+        except subprocess.TimeoutExpired:
+            exited = False
+            _kill_group(process)
     process.wait()
+    return not exited
+
+
+def _wait_without_reaping(
+    process: subprocess.Popen[bytes], timeout: float | None
+) -> bool:
+    """Wait for the process to exit, leaving it unreaped so its id stays its
+    own; False if `timeout` seconds pass first.
+    """
+    flags = os.WEXITED | os.WNOWAIT
+    if timeout is None:
+        os.waitid(os.P_PID, process.pid, flags)
+        return True
+    deadline = time.monotonic() + timeout
+    # Polled: waitid cannot wait for a limited time.
+    while os.waitid(os.P_PID, process.pid, flags | os.WNOHANG) is None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(POLL_INTERVAL, remaining))
+    return True
 
 
 def _no_prompts() -> dict[str, str]:

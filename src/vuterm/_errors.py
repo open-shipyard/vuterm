@@ -17,5 +17,14 @@ class CommandError(VutermError):
         self.stderr = stderr
 
 
+class CommandTimeoutError(VutermError):
+    """A streamed command was still running after its timeout, and was stopped."""
+
+    def __init__(self, message: str, *, timeout: float, returncode: int) -> None:
+        super().__init__(message)
+        self.timeout = timeout
+        self.returncode = returncode
+
+
 class NoWorkspaceAvailableError(VutermError):
     """Every workspace is reserved and no more can be created."""

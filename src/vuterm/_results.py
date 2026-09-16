@@ -18,3 +18,7 @@ class AgentResult:
     """The agent's final message, as its CLI reports it, or None if it gave
     none. An agent that errored may still have one, such as the error it met.
     """
+    timed_out: bool = False
+    """Whether the agent was stopped for running past its timeout; it did not
+    succeed then.
+    """
