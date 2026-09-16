@@ -10,6 +10,11 @@ worktree for each repository in `vt_working_dir/repos`. See
 The reservation is released when the agent exits, whether it completed
 successfully or errored.
 
+A workspace is reserved while it is being created, and free once
+`prepare_new_workspace` returns it: the next `launch_agent_in_workspace` may
+take it, reset it and run an agent in it. Anything done in a free workspace
+can be discarded at any time.
+
 ## Default branch
 
 A repository's default branch is the one `origin/HEAD` points to, which
@@ -41,10 +46,10 @@ latest remote commit, and then restores it:
 
     git -C vt_working_dir/repos/<repo> fetch origin
     git reset --hard
-    git clean -fd
+    git clean -ffd
     git checkout --detach origin/<default>
 
-`git clean -fd` intentionally keeps ignored files, such as installed
+`git clean -ffd` intentionally keeps ignored files, such as installed
 dependencies, virtual environments and build output, so the next agent does not
 have to reinstall them.
 
