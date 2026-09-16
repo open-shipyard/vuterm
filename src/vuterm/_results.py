@@ -8,9 +8,13 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AgentResult:
-    """Whether the agent completed successfully or errored.
+    """Whether the agent completed successfully or errored, and its response.
 
     An agent that errors is reported here rather than raised.
     """
 
     success: bool
+    response: str | None = None
+    """The agent's final message, as its CLI reports it, or None if it gave
+    none. An agent that errored may still have one, such as the error it met.
+    """

@@ -47,24 +47,73 @@ def test_can_leave_permissions_to_the_opencode_config() -> None:
 
 
 @pytest.mark.parametrize(
-    ("scenario", "returncode", "success"),
+    ("scenario", "returncode", "expected"),
     [
-        ("answer", 0, True),
-        ("tool_use", 0, True),
-        ("tool_error", 0, True),
-        ("error", 1, False),
+        ("answer", 0, AgentResult(success=True, response="ok")),
+        (
+            "tool_use",
+            0,
+            AgentResult(success=True, response="a.txt, err.txt, out.jsonl"),
+        ),
+        ("tool_error", 0, AgentResult(success=True, response="done")),
+        ("error", 1, AgentResult(success=False)),
     ],
 )
-def test_reads_the_outcome(scenario: str, returncode: int, success: bool) -> None:
+def test_reads_the_outcome(
+    scenario: str, returncode: int, expected: AgentResult
+) -> None:
     session, _ = replay(scenario)
 
-    assert session.finish(returncode) == AgentResult(success=success)
+    assert session.finish(returncode) == expected
 
 
 def test_fails_when_opencode_exits_non_zero() -> None:
     session, _ = replay("answer")
 
+    assert session.finish(1) == AgentResult(success=False, response="ok")
+
+
+def test_the_response_is_the_last_steps_text_not_what_came_before_a_tool() -> None:
+    session, messages = replay("text_then_tool")
+
+    response = session.finish(0).response
+
+    assert messages[1] == "Let me look."
+    assert response is not None
+    assert response.startswith("The directory contains three files:")
+    assert "Let me look." not in response
+
+
+def test_has_no_response_when_the_run_fails_after_a_tool_call() -> None:
+    session = OpenCodeHarness().start(TASK)
+    lines = (FIXTURES / "text_then_tool.jsonl").read_text().splitlines()
+    error = {"type": "error", "error": {"name": "APIError", "data": {"message": "x"}}}
+    for line in [*lines[:4], json.dumps(error)]:  # up to the tool-calls step_finish
+        session.feed(line)
+
     assert session.finish(1) == AgentResult(success=False)
+
+
+def test_joins_the_text_parts_of_the_last_step() -> None:
+    session = OpenCodeHarness().start(TASK)
+    step = {"type": "step_start", "sessionID": "ses_1"}
+    for line in [step, text_event("one"), text_event(""), text_event("two")]:
+        session.feed(json.dumps(line))
+
+    assert session.finish(0) == AgentResult(success=True, response="one\ntwo")
+
+
+def test_has_no_response_when_the_last_step_has_no_text() -> None:
+    session = OpenCodeHarness().start(TASK)
+    step = {"type": "step_start", "sessionID": "ses_1"}
+    for line in [step, text_event("Let me look."), step]:
+        session.feed(json.dumps(line))
+
+    assert session.finish(0) == AgentResult(success=True)
+
+
+def text_event(text: str) -> dict[str, object]:
+    return {"type": "text", "part": {"type": "text", "text": text}}
 
 
 def test_fails_when_opencode_reports_an_error_but_exits_zero() -> None:

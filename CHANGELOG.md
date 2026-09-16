@@ -23,6 +23,8 @@ and this project adheres to
   `max_workspace_count`, and safe to reserve from several threads. A reset
   adds a worktree back when its folder is missing or is no longer a worktree,
   and a failed creation leaves nothing behind in the clones.
+- `AgentResult.response`, the agent's final message, read by each harness:
+  Claude Code's `result` event, or the text of OpenCode's last step.
 - The `git` and `gh` wrappers, `Git` and `GitHub`, raising `CommandError`
   with the status and stderr of a failed command.
 

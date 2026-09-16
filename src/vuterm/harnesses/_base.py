@@ -28,7 +28,9 @@ class AgentSession(ABC):
 
     @abstractmethod
     def finish(self, returncode: int) -> AgentResult:
-        """Read whether the agent completed successfully or errored."""
+        """Read whether the agent completed successfully or errored, and its
+        response, from the exit status and the lines fed so far.
+        """
 
 
 class Harness(ABC):

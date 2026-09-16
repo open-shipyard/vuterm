@@ -37,8 +37,6 @@ return a Path to the new location
 worspaces should follow incremental number sufixes as ws0001, ws0002
 """
 ws_path = vt_cli.prepare_new_workspace()
-
-
 ```
 
 
@@ -47,20 +45,14 @@ import vuterm as vt
 
 
 vt_cli = vt.Client(
-    working_dir="/some/path",
-    repositories=["repo1", "repo2"],
-    max_workspace_count=100
+    working_dir="/some/path", repositories=["repo1", "repo2"], max_workspace_count=100
 )
 
 
 # will run "claude -p" in the current folder
-results = vt_cli.launch_agent(
-    harness="claude",
-    task="update the README"
-)
+results = vt_cli.launch_agent(harness="claude", task="update the README")
 
 # results should allow knowing if the agent completed normally or errored out
-
 
 
 """
@@ -72,11 +64,7 @@ then it should cd into that workspace folder and start claude in it, so claude h
 
 """
 
-results = vt_cli.launch_agent_in_workspace(
-    harness="claude",
-    task="update the README"
-)
-
+results = vt_cli.launch_agent_in_workspace(harness="claude", task="update the README")
 ```
 
 
@@ -93,9 +81,15 @@ vt_cli should also wrap git and gh clients, and exposing Python functions for:
 
 ## Results
 
-`launch_agent` and `launch_agent_in_workspace` return a result that only
-reports whether the agent completed successfully or errored. Anything else
-(output, exit code, cost, session id) is out of scope for now.
+`launch_agent` and `launch_agent_in_workspace` return a result that reports
+whether the agent completed successfully or errored, and its response: the
+agent's final message, or none if it gave none. Anything else (exit code,
+cost, session id) is out of scope for now.
+
+Each harness decides what the response is, since every CLI reports it its own
+way: Claude Code's is the text of its `result` event; OpenCode sends no such
+event, so its response is the text of its last step, not text written before
+a tool call.
 
 
 ## Agent runs
@@ -116,7 +110,8 @@ The port does no I/O. For each run, the harness creates a session that:
 
 - provides the command line that runs the agent headless on the task
 - turns each output line into a log message, or skips it
-- turns the exit status and the lines it has seen into the result
+- turns the exit status and the lines it has seen into the result, response
+  included
 
 vt_cli runs the command and feeds each output line to the session as soon as
 the agent writes it, so logs are available while the agent runs.

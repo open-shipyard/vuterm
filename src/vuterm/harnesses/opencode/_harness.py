@@ -39,6 +39,9 @@ class OpenCodeSession(AgentSession):
         self._command += ["--", task]
         self._session_id: str | None = None
         self._errored = False
+        # The text parts of the latest step since its last tool call: the
+        # last step's are the response.
+        self._step_texts: list[str] = []
 
     @property
     def command(self) -> list[str]:
@@ -55,16 +58,27 @@ class OpenCodeSession(AgentSession):
 
     def finish(self, returncode: int) -> AgentResult:
         # OpenCode sends no final result event, only an error event when it fails.
-        return AgentResult(success=returncode == 0 and not self._errored)
+        return AgentResult(
+            success=returncode == 0 and not self._errored,
+            response="\n".join(self._step_texts) or None,
+        )
 
     def _describe(self, event: Any) -> str | None:
         match event["type"]:
-            case "step_start" if self._session_id is None:
-                self._session_id = str(event["sessionID"])
-                return f"Session {self._session_id} started"
+            case "step_start":
+                # Text before a tool call is not the answer; the next step's is.
+                self._step_texts = []
+                if self._session_id is None:
+                    self._session_id = str(event["sessionID"])
+                    return f"Session {self._session_id} started"
             case "text":
-                return str(event["part"]["text"]) or None
+                text = str(event["part"]["text"])
+                if text:
+                    self._step_texts.append(text)
+                return text or None
             case "tool_use":
+                # Even if no step follows, as when the run fails next.
+                self._step_texts = []
                 return _describe_tool(event["part"])
             case "error":
                 self._errored = True
